@@ -1,0 +1,6 @@
+services:
+    app:
+        container_name: k8s_demo_app
+        build: .
+        ports:
+            - "5000:5000"
