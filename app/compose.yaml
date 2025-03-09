@@ -1,6 +1,13 @@
+version: "3.8"
+
 services:
-    app:
-        container_name: k8s_demo_app
+    flask_app:
         build: .
         ports:
             - "5000:5000"
+        volumes:
+            - .:/app
+        environment:
+            - FLASK_ENV=development
+            - FLASK_APP=app.py
+        command: flask run --host=0.0.0.0 --port=5000 --reload

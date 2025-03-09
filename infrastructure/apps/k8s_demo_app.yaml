@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+    name: k8s-demo-app
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: k8s-demo-app-deployment
+    namespace: k8s-demo-app
+spec:
+    selector:
+        matchLabels:
+            app: k8s-demo-app
+    template:
+        metadata:
+            labels:
+                app: k8s-demo-app
+        spec:
+            containers:
+                -   name: k8s-demo-app
+                    image: sazzadr/k8s-demo-app:1.0
+                    ports:
+                        -   name: http
+                            containerPort: 5000
+                    resources:
+                        requests:
+                            cpu: 100m
+                            memory: 256Mi
+                        limits:
+                            cpu: 100m
+                            memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+    name: k8s-demo-app-service
+    namespace: k8s-demo-app
+spec:
+    selector:
+        app: k8s-demo-app
+    ports:
+        -   name: http
+            protocol: TCP
+            port: 5000
+            targetPort: 5000
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+    name: k8s-demo-app-hpa
+    namespace: k8s-demo-app
+spec:
+    scaleTargetRef:
+        apiVersion: apps/v1
+        kind: Deployment
+        name: k8s-demo-app-deployment
+    minReplicas: 1
+    maxReplicas: 5
+    metrics:
+        -   type: Resource
+            resource:
+                name: cpu
+                target:
+                    type: Utilization
+                    averageUtilization: 80
+        -   type: Resource
+            resource:
+                name: memory
+                target:
+                    type: Utilization
+                    averageUtilization: 70

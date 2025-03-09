@@ -1,14 +1,14 @@
-FROM python:3.10-alpine
-WORKDIR /code
+FROM python:3.11-alpine
 
+ENV PYTHONUNBUFFERED=1
 ENV FLASK_APP=app.py
 ENV FLASK_RUN_HOST=0.0.0.0
 
-COPY requirements.txt requirements.txt
-RUN pip install -r requirements.txt
+WORKDIR /app
+COPY . /app
+
+RUN pip install --no-cache-dir -r requirements.txt
 
 EXPOSE 5000
-
-COPY . .
 
 CMD ["flask", "run", "--debug"]
