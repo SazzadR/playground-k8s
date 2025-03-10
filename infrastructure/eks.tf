@@ -90,10 +90,10 @@ resource "aws_eks_node_group" "general" {
     ]
 
     capacity_type = "ON_DEMAND"
-    instance_types = ["t3.medium"]
+    instance_types = ["t3.small"]
 
     scaling_config {
-        desired_size = 2
+        desired_size = 1
         max_size     = 3
         min_size     = 1
     }
@@ -127,4 +127,102 @@ resource "helm_release" "metrics_server" {
     ]
 
     depends_on = [aws_eks_node_group.general]
+}
+
+resource "aws_eks_addon" "pod_identity" {
+    cluster_name  = aws_eks_cluster.main.name
+    addon_name    = "eks-pod-identity-agent"
+    addon_version = "v1.3.5-eksbuild.2"
+}
+
+resource "aws_iam_role" "eks_cluster_autoscaler" {
+    name = "${aws_eks_cluster.main.name}-cluster-autoscaler"
+
+    assume_role_policy = jsonencode({
+        Version = "2012-10-17"
+        Statement = [
+            {
+                Effect = "Allow"
+                Action = [
+                    "sts:AssumeRole",
+                    "sts:TagSession"
+                ]
+                Principal = {
+                    Service = "pods.eks.amazonaws.com"
+                }
+            }
+        ]
+    })
+}
+
+resource "aws_iam_policy" "eks_cluster_autoscaler" {
+    name = "${aws_eks_cluster.main.name}-cluster-autoscaler"
+
+    policy = jsonencode({
+        Version = "2012-10-17"
+        Statement = [
+            {
+                Effect = "Allow"
+                Action = [
+                    "autoscaling:DescribeAutoScalingGroups",
+                    "autoscaling:DescribeAutoScalingInstances",
+                    "autoscaling:DescribeLaunchConfigurations",
+                    "autoscaling:DescribeScalingActivities",
+                    "autoscaling:DescribeTags",
+                    "ec2:DescribeImages",
+                    "ec2:DescribeInstanceTypes",
+                    "ec2:DescribeLaunchTemplateVersions",
+                    "ec2:GetInstanceTypesFromInstanceRequirements",
+                    "eks:DescribeNodegroup"
+                ]
+                Resource = "*"
+            },
+            {
+                Effect = "Allow"
+                Action = [
+                    "autoscaling:SetDesiredCapacity",
+                    "autoscaling:TerminateInstanceInAutoScalingGroup"
+                ]
+                Resource = "*"
+            },
+        ]
+    })
+}
+
+resource "aws_iam_role_policy_attachment" "eks_cluster_autoscaler" {
+    policy_arn = aws_iam_policy.eks_cluster_autoscaler.arn
+    role       = aws_iam_role.eks_cluster_autoscaler.name
+}
+
+resource "aws_eks_pod_identity_association" "eks_cluster_autoscaler" {
+    cluster_name    = aws_eks_cluster.main.name
+    namespace       = "kube-system"
+    service_account = "cluster-autoscaler"
+    role_arn        = aws_iam_role.eks_cluster_autoscaler.arn
+}
+
+resource "helm_release" "eks_cluster_autoscaler" {
+    name = "autoscaler"
+
+    repository = "https://kubernetes.github.io/autoscaler"
+    chart      = "cluster-autoscaler"
+    namespace  = "kube-system"
+    version    = "9.37.0"
+
+    set {
+        name  = "rbac.serviceAccount.name"
+        value = "cluster-autoscaler"
+    }
+
+    set {
+        name  = "autoDiscovery.clusterName"
+        value = aws_eks_cluster.main.name
+    }
+
+    set {
+        name  = "awsRegion"
+        value = local.region
+    }
+
+    depends_on = [helm_release.metrics_server]
 }
