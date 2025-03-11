@@ -123,3 +123,157 @@ resource "helm_release" "metrics_server" {
         file("${path.module}/values/metrics-server.yaml")
     ]
 }
+
+resource "kubectl_manifest" "k8s_demo_app_namespace" {
+    yaml_body = <<YAML
+apiVersion: v1
+kind: Namespace
+metadata:
+    name: k8s-demo-app
+YAML
+
+    depends_on = [module.eks]
+}
+
+resource "kubectl_manifest" "k8s_demo_app_deployment" {
+    yaml_body = <<YAML
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: k8s-demo-app-deployment
+    namespace: k8s-demo-app
+spec:
+    selector:
+        matchLabels:
+            app: k8s-demo-app
+    template:
+        metadata:
+            labels:
+                app: k8s-demo-app
+        spec:
+            containers:
+                -   name: k8s-demo-app
+                    image: sazzadr/k8s-demo-app:1.0
+                    ports:
+                        -   name: http
+                            containerPort: 5000
+                    resources:
+                        requests:
+                            cpu: 100m
+                            memory: 256Mi
+                        limits:
+                            cpu: 100m
+                            memory: 256Mi
+YAML
+
+    depends_on = [kubectl_manifest.k8s_demo_app_namespace]
+}
+
+resource "kubectl_manifest" "k8s_demo_app_service" {
+    yaml_body = <<YAML
+apiVersion: v1
+kind: Service
+metadata:
+    name: k8s-demo-app-service
+    namespace: k8s-demo-app
+spec:
+    selector:
+        app: k8s-demo-app
+    ports:
+        -   name: http
+            protocol: TCP
+            port: 5000
+            targetPort: 5000
+YAML
+
+    depends_on = [kubectl_manifest.k8s_demo_app_deployment]
+}
+
+resource "kubectl_manifest" "k8s_demo_app_hpa" {
+    yaml_body = <<YAML
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+    name: k8s-demo-app-hpa
+    namespace: k8s-demo-app
+spec:
+    scaleTargetRef:
+        apiVersion: apps/v1
+        kind: Deployment
+        name: k8s-demo-app-deployment
+    minReplicas: 2
+    maxReplicas: 5
+    metrics:
+        -   type: Resource
+            resource:
+                name: cpu
+                target:
+                    type: Utilization
+                    averageUtilization: 80
+        -   type: Resource
+            resource:
+                name: memory
+                target:
+                    type: Utilization
+                    averageUtilization: 70
+YAML
+
+    depends_on = [kubectl_manifest.k8s_demo_app_service]
+}
+
+resource "kubectl_manifest" "ingress_class_params" {
+    yaml_body = <<YAML
+apiVersion: eks.amazonaws.com/v1
+kind: IngressClassParams
+metadata:
+    name: alb
+spec:
+    scheme: internet-facing
+YAML
+
+    depends_on = [kubectl_manifest.k8s_demo_app_hpa]
+}
+
+resource "kubectl_manifest" "ingress_class" {
+    yaml_body = <<YAML
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+    name: alb
+    annotations:
+        ingressclass.kubernetes.io/is-default-class: "true"
+spec:
+    # Configures the IngressClass to use EKS Auto Mode
+    controller: eks.amazonaws.com/alb
+    parameters:
+        apiGroup: eks.amazonaws.com
+        kind: IngressClassParams
+        name: alb
+YAML
+
+    depends_on = [kubectl_manifest.ingress_class_params]
+}
+
+resource "kubectl_manifest" "ingress" {
+    yaml_body = <<YAML
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+    name: k8s-demo-app
+    namespace: k8s-demo-app
+spec:
+    ingressClassName: alb
+    rules:
+        -   http:
+                paths:
+                    -   path: /*
+                        pathType: ImplementationSpecific
+                        backend:
+                            service:
+                                name: k8s-demo-app-service
+                                port:
+                                    number: 5000
+YAML
+
+    depends_on = [kubectl_manifest.ingress_class]
+}
