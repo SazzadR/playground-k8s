@@ -117,7 +117,7 @@ resource "helm_release" "metrics_server" {
     chart      = "metrics-server"
     namespace  = "kube-system"
 
-    timeout = 600
+    timeout = 900
 
     values = [
         file("${path.module}/values/metrics-server.yaml")
@@ -276,4 +276,86 @@ spec:
 YAML
 
     depends_on = [kubectl_manifest.ingress_class]
+}
+
+resource "helm_release" "argocd" {
+    name             = "argocd"
+    repository       = "https://argoproj.github.io/argo-helm"
+    chart            = "argo-cd"
+    version          = "5.46.7"
+    namespace        = "argocd"
+    create_namespace = true
+
+    timeout = 900
+
+    values = [
+        <<-EOT
+        server:
+            service:
+                type: LoadBalancer
+                annotations:
+                    service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+                    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+                    service.beta.kubernetes.io/aws-load-balancer-subnets: "${aws_subnet.public_1.id},${aws_subnet.public_2.id}"
+            ingress:
+                enabled: false
+            extraArgs:
+                - --insecure
+        configs:
+            params:
+                server.insecure: true
+        controller:
+            resources:
+                limits:
+                    cpu: 500m
+                    memory: 512Mi
+                requests:
+                    cpu: 250m
+                    memory: 256Mi
+        repoServer:
+            resources:
+                limits:
+                    cpu: 300m
+                    memory: 512Mi
+                requests:
+                    cpu: 100m
+                    memory: 256Mi
+        dex:
+            resources:
+                limits:
+                    cpu: 200m
+                    memory: 128Mi
+                requests:
+                    cpu: 100m
+                    memory: 64Mi
+        redis:
+            resources:
+                limits:
+                    cpu: 200m
+                    memory: 128Mi
+                requests:
+                    cpu: 100m
+                    memory: 64Mi
+        EOT
+    ]
+
+    depends_on = [module.eks]
+}
+
+data "kubernetes_service" "argocd_lb" {
+    metadata {
+        name      = "argocd-server"
+        namespace = "argocd"
+    }
+
+    depends_on = [helm_release.argocd]
+}
+
+data "kubernetes_secret" "argocd_admin_password" {
+    metadata {
+        name      = "argocd-initial-admin-secret"
+        namespace = "argocd"
+    }
+
+    depends_on = [helm_release.argocd]
 }
