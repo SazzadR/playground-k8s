@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+    name: k8s-demo-app
+    namespace: argocd
+spec:
+    project: default
+    source:
+        repoURL: https://github.com/SazzadR/playground-k8s.git
+        targetRevision: HEAD
+        path: infrastructure/k8s/apps/k8s_demo_app
+    destination:
+        server: https://kubernetes.default.svc
+        namespace: k8s-demo-app
+    syncPolicy:
+        syncOptions:
+            - CreateNamespace=true
+        automated:
+            prune: true
+            selfHeal: true

@@ -120,7 +120,7 @@ resource "helm_release" "metrics_server" {
     timeout = 900
 
     values = [
-        file("${path.module}/values/metrics-server.yaml")
+        file("${path.module}/k8s/metrics-server.yaml")
     ]
 }
 
